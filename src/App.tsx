@@ -1,61 +1,100 @@
-import { useState, ChangeEvent } from "react";
-import { ChunkFile } from "./services";
+import { useReducer, ChangeEvent } from "react";
+import { formatSize } from "./utilities";
+
+type TFile = {
+  progress: number;
+  abortController: AbortController;
+  file: File;
+};
+
+const initialState: Array<TFile> = [];
+
+type TReducerAction = {
+  type: EReducerActionType;
+  payload: unknown;
+};
+
+const enum EReducerActionType {
+  SET_FILES,
+}
+
+function reducer(state: typeof initialState, action: TReducerAction) {
+  switch (action.type) {
+    case EReducerActionType.SET_FILES:
+      const fileList = action.payload as FileList;
+      return Array.from(fileList ?? [], (file) => ({
+        file,
+        progress: 0,
+        abortController: new AbortController(),
+      }));
+    default:
+      return state;
+  }
+}
+
+function action() {}
 
 function App() {
-  const [files, setFiles] = useState<Array<ChunkFile>>();
+  const [state, dispatch] = useReducer(reducer, initialState);
 
   const handleFileChange = (ev: ChangeEvent<HTMLInputElement>) => {
-    setFiles(
-      Array.from(ev.target.files ?? [], (file: File) => new ChunkFile(file))
-    );
+    dispatch({
+      type: EReducerActionType.SET_FILES,
+      payload: ev.target.files,
+    });
   };
 
-  const uploadFile = async (idx: number) => {
-    if (!files) return;
-    const file = files[idx];
-    for (const chunk of file.blobIterator()) {
-      const headers = new Headers();
-      headers.append(
-        "Content-Range",
-        `bytes ${chunk.start}-${chunk.end}/${file.bytes}`
-      );
-      const body = new FormData();
-      body.append("chunk", chunk.blob);
-      try {
-        const response = await fetch("/files", {
-          method: "POST",
-          headers,
-          body,
-          signal: file.abortCtrl.signal,
-        });
-        if (!response.ok) {
-          console.error("Error uploading file:", response.statusText);
-          return;
-        }
-      } catch (error: any) {
-        if (error.name !== "AbortError") {
-          console.error("Network error during file upload:", error.message);
-        } else {
-          console.info("Upload Paused");
-        }
-      }
-    }
+  const handleFileUpload = (idx: number) => {
+    const { file } = state[idx];
+    console.log(file);
   };
+
+  // const uploadFile = async (idx: number) => {
+  //   if (!files) return;
+  //   const file = files[idx];
+  //   for (const chunk of file.blobIterator()) {
+  //     const headers = new Headers();
+  //     headers.append(
+  //       "Content-Range",
+  //       `bytes ${chunk.start}-${chunk.end}/${file.bytes}`
+  //     );
+  //     const body = new FormData();
+  //     body.append("chunk", chunk.blob);
+  //     try {
+  //       const response = await fetch("/files", {
+  //         method: "POST",
+  //         headers,
+  //         body,
+  //         signal: file.abortCtrl.signal,
+  //       });
+  //       if (!response.ok) {
+  //         console.error("Error uploading file:", response.statusText);
+  //         return;
+  //       }
+  //     } catch (error: any) {
+  //       if (error.name !== "AbortError") {
+  //         console.error("Network error during file upload:", error.message);
+  //       } else {
+  //         console.info("Upload Paused");
+  //       }
+  //     }
+  //   }
+  // };
 
   return (
     <>
       <input type="file" name="files" onChange={handleFileChange} multiple />
-      {files ? (
+      {state.length ? (
         <ul>
-          {files.map((file: ChunkFile, idx: number) => (
+          {state.map(({ file, progress }: TFile, idx: number) => (
             <li key={file.name}>
-              {file.name} -- {file.formatBytes()}
-              <button type="button" onClick={() => uploadFile(idx)}>
+              {file.name} -- {formatSize(file.size)}
+              <button type="button" onClick={() => handleFileUpload(idx)}>
                 Start
               </button>
               <label htmlFor="file">Upload progress:</label>
-              <progress id="file" max="100" value={file.progress} />
-              <span>{file.progress}%</span>
+              <progress id="file" max="100" value={progress} />
+              <span>{progress}%</span>
             </li>
           ))}
         </ul>
