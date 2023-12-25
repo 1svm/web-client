@@ -1,10 +1,11 @@
 import { useReducer, ChangeEvent } from "react";
-import { formatSize } from "./utilities";
+import { formatSize, generateChunks, type TBlobChunk } from "./utilities";
 
 type TFile = {
+  file: File;
+  chunks: TBlobChunk[];
   progress: number;
   abortController: AbortController;
-  file: File;
 };
 
 const initialState: Array<TFile> = [];
@@ -26,6 +27,7 @@ function reducer(state: typeof initialState, action: TReducerAction) {
         file,
         progress: 0,
         abortController: new AbortController(),
+        chunks: generateChunks(file),
       }));
     default:
       return state;
@@ -44,42 +46,36 @@ function App() {
     });
   };
 
-  const handleFileUpload = (idx: number) => {
-    const { file } = state[idx];
-    console.log(file);
+  const handleFileUpload = async (idx: number) => {
+    const { file, chunks, abortController } = state[idx];
+    for (const chunk of chunks) {
+      const headers = new Headers();
+      headers.append(
+        "Content-Range",
+        `bytes ${chunk.start}-${chunk.end}/${file.size}`
+      );
+      const body = new FormData();
+      body.append("chunk", chunk.blob);
+      try {
+        const response = await fetch("/files", {
+          method: "POST",
+          headers,
+          body,
+          signal: abortController.signal,
+        });
+        if (!response.ok) {
+          console.error("Error uploading file:", response.statusText);
+          return;
+        }
+      } catch (error: any) {
+        if (error.name !== "AbortError") {
+          console.error("Network error during file upload:", error.message);
+        } else {
+          console.info("Upload Paused");
+        }
+      }
+    }
   };
-
-  // const uploadFile = async (idx: number) => {
-  //   if (!files) return;
-  //   const file = files[idx];
-  //   for (const chunk of file.blobIterator()) {
-  //     const headers = new Headers();
-  //     headers.append(
-  //       "Content-Range",
-  //       `bytes ${chunk.start}-${chunk.end}/${file.bytes}`
-  //     );
-  //     const body = new FormData();
-  //     body.append("chunk", chunk.blob);
-  //     try {
-  //       const response = await fetch("/files", {
-  //         method: "POST",
-  //         headers,
-  //         body,
-  //         signal: file.abortCtrl.signal,
-  //       });
-  //       if (!response.ok) {
-  //         console.error("Error uploading file:", response.statusText);
-  //         return;
-  //       }
-  //     } catch (error: any) {
-  //       if (error.name !== "AbortError") {
-  //         console.error("Network error during file upload:", error.message);
-  //       } else {
-  //         console.info("Upload Paused");
-  //       }
-  //     }
-  //   }
-  // };
 
   return (
     <>
