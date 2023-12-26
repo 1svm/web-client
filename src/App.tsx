@@ -1,14 +1,19 @@
 import { useReducer, ChangeEvent } from "react";
-import { formatSize, generateChunks, type TBlobChunk } from "./utilities";
+import {
+  formatBlobSize,
+  generateBlobChunks,
+  type TBlobChunk,
+} from "./utilities";
 
 type TFile = {
   file: File;
-  chunks: TBlobChunk[];
+  chunks: Array<TBlobChunk>;
   progress: number;
   abortController: AbortController;
+  errors: Array<Error>;
 };
 
-const initialState: Array<TFile> = [];
+const initialState: Record<string, TFile> = {};
 
 type TReducerAction = {
   type: EReducerActionType;
@@ -16,45 +21,51 @@ type TReducerAction = {
 };
 
 const enum EReducerActionType {
-  SET_FILES,
+  INIT_FILES_FOR_UPLOAD,
 }
 
 function reducer(state: typeof initialState, action: TReducerAction) {
   switch (action.type) {
-    case EReducerActionType.SET_FILES:
+    case EReducerActionType.INIT_FILES_FOR_UPLOAD:
       const fileList = action.payload as FileList;
-      return Array.from(fileList ?? [], (file) => ({
-        file,
-        progress: 0,
-        abortController: new AbortController(),
-        chunks: generateChunks(file),
-      }));
+      const newState: typeof initialState = {};
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList.item(i);
+        if (!file) continue;
+        newState[`${file.name}:${file.size}`] = {
+          file,
+          chunks: [],
+          progress: 0,
+          abortController: new AbortController(),
+          errors: [],
+        };
+      }
+      return newState;
     default:
       return state;
   }
 }
-
-function action() {}
 
 function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const handleFileChange = (ev: ChangeEvent<HTMLInputElement>) => {
     dispatch({
-      type: EReducerActionType.SET_FILES,
+      type: EReducerActionType.INIT_FILES_FOR_UPLOAD,
       payload: ev.target.files,
     });
   };
 
-  const handleFileUpload = async (idx: number) => {
-    const { file, chunks, abortController } = state[idx];
+  const handleFileUpload = async (id: string) => {
+    const { file, chunks, abortController } = state[id];
     for (const chunk of chunks) {
       const headers = new Headers();
       headers.append(
         "Content-Range",
-        `bytes ${chunk.start}-${chunk.end}/${file.size}`
+        `bytes ${chunk.startIndex}-${chunk.endIndex}/${file.size}`
       );
       const body = new FormData();
+      body.append("id", id);
       body.append("chunk", chunk.blob);
       try {
         const response = await fetch("/files", {
@@ -82,10 +93,10 @@ function App() {
       <input type="file" name="files" onChange={handleFileChange} multiple />
       {state.length ? (
         <ul>
-          {state.map(({ file, progress }: TFile, idx: number) => (
+          {Object.entries(state).map(([id, { file, progress }]) => (
             <li key={file.name}>
-              {file.name} -- {formatSize(file.size)}
-              <button type="button" onClick={() => handleFileUpload(idx)}>
+              {file.name} -- {formatBlobSize(file.size)}
+              <button type="button" onClick={() => handleFileUpload(id)}>
                 Start
               </button>
               <label htmlFor="file">Upload progress:</label>

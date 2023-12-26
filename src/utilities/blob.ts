@@ -1,4 +1,7 @@
-export function formatSize(sizeInBytes: number, options = { precision: 2 }) {
+export function formatBlobSize(
+  sizeInBytes: number,
+  options = { precision: 2 }
+) {
   if (sizeInBytes === 0) return "0 Bytes";
 
   const conversionFactor = 1000;
@@ -10,26 +13,26 @@ export function formatSize(sizeInBytes: number, options = { precision: 2 }) {
 }
 
 export type TBlobChunk = {
-  start: number;
-  end: number;
+  startIndex: number;
+  endIndex: number;
   blob: Blob;
 };
 
-export function generateChunks(
+export function generateBlobChunks(
   blob: Blob,
   options = { chunkSize: 1 }
 ): Array<TBlobChunk> {
   const chunkList: TBlobChunk[] = [];
   const chunkSizeInMBs = options.chunkSize * 1024 * 1024;
-  let start = 0;
-  while (start < blob.size) {
-    let end = start + Math.min(chunkSizeInMBs, blob.size);
+  let startIndex = 0;
+  while (startIndex < blob.size) {
+    let endIndex = startIndex + Math.min(chunkSizeInMBs, blob.size);
     chunkList.push({
-      start,
-      end,
-      blob: blob.slice(start, end, blob.type),
+      startIndex,
+      endIndex,
+      blob: blob.slice(startIndex, endIndex, blob.type),
     });
-    start = end;
+    startIndex = endIndex;
   }
   return chunkList;
 }
