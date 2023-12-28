@@ -21,7 +21,7 @@ export type TBlobChunk = {
 export function generateBlobChunks(
   blob: Blob,
   options = { chunkSize: 1 }
-): Array<TBlobChunk> {
+): TBlobChunk[] {
   const chunkList: TBlobChunk[] = [];
   const chunkSizeInMBs = options.chunkSize * 1024 * 1024;
   let startIndex = 0;

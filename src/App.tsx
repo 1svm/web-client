@@ -6,10 +6,11 @@ import {
 } from "./utilities";
 
 const enum FileStatus {
-  UPLOAD_NOT_STARTED,
-  UPLOAD_STARTED,
-  UPLOAD_PAUSED,
-  UPLOAD_CANCELLED,
+  NOT_STARTED,
+  STARTED,
+  PAUSED,
+  CANCELLED,
+  FAILED,
 }
 
 type TFile = {
@@ -25,13 +26,15 @@ const initialState: Record<string, TFile> = {};
 
 type TReducerAction = {
   type: EReducerActionType;
-  payload: unknown;
+  payload?: unknown;
   id?: string;
 };
 
 const enum EReducerActionType {
   ADD_FILES,
-  INIT_FILE_UPLOAD,
+  INIT,
+  ERROR,
+  PAUSED,
 }
 
 function reducer(state: typeof initialState, action: TReducerAction) {
@@ -48,11 +51,11 @@ function reducer(state: typeof initialState, action: TReducerAction) {
           progress: null,
           abortController: null,
           errors: [],
-          status: FileStatus.UPLOAD_NOT_STARTED,
+          status: FileStatus.NOT_STARTED,
         };
       }
       return newState;
-    case EReducerActionType.INIT_FILE_UPLOAD:
+    case EReducerActionType.INIT: {
       const id = action.id as string;
       const chunks = action.payload as TBlobChunk[];
       return {
@@ -61,12 +64,35 @@ function reducer(state: typeof initialState, action: TReducerAction) {
           ...state[id],
           chunks,
           progress: 0,
-          status: FileStatus.UPLOAD_STARTED,
+          status: FileStatus.STARTED,
           abortController: new AbortController(),
         },
       };
-    default:
+    }
+    case EReducerActionType.ERROR: {
+      const id = action.id as string;
+      return {
+        ...state,
+        [id]: {
+          ...state[id],
+          status: FileStatus.FAILED,
+          errors: [],
+        },
+      };
+    }
+    case EReducerActionType.PAUSED: {
+      const id = action.id as string;
+      return {
+        ...state,
+        [id]: {
+          ...state[id],
+          status: FileStatus.PAUSED,
+        },
+      };
+    }
+    default: {
       return state;
+    }
   }
 }
 
@@ -83,38 +109,50 @@ function App() {
   const handleFileUpload = async (id: string) => {
     const chunks = generateBlobChunks(state[id].file);
     dispatch({
-      type: EReducerActionType.INIT_FILE_UPLOAD,
+      type: EReducerActionType.INIT,
       payload: chunks,
       id,
     });
-    // for (const chunk of chunks) {
-    //   const headers = new Headers();
-    //   headers.append(
-    //     "Content-Range",
-    //     `bytes ${chunk.startIndex}-${chunk.endIndex}/${file.size}`
-    //   );
-    //   const body = new FormData();
-    //   body.append("id", id);
-    //   body.append("chunk", chunk.blob);
-    //   try {
-    //     const response = await fetch("/files", {
-    //       method: "POST",
-    //       headers,
-    //       body,
-    //       signal: abortController.signal,
-    //     });
-    //     if (!response.ok) {
-    //       console.error("Error uploading file:", response.statusText);
-    //       return;
-    //     }
-    //   } catch (error: any) {
-    //     if (error.name !== "AbortError") {
-    //       console.error("Network error during file upload:", error.message);
-    //     } else {
-    //       console.info("Upload Paused");
-    //     }
-    //   }
-    // }
+    for (const chunk of chunks) {
+      const headers = new Headers();
+      headers.append(
+        "Content-Range",
+        `bytes ${chunk.startIndex}-${chunk.endIndex}/${state[id].file.size}`
+      );
+      const body = new FormData();
+      body.append("id", id);
+      body.append("chunk", chunk.blob);
+      try {
+        const response = await fetch("/files", {
+          method: "POST",
+          headers,
+          body,
+          signal: state[id].abortController?.signal,
+        });
+        if (!response.ok) {
+          dispatch({
+            type: EReducerActionType.ERROR,
+            payload: new Error("Something went wrong!"),
+            id,
+          });
+          return;
+        }
+      } catch (err: unknown) {
+        const error = err as Error;
+        if (error.name !== "AbortError") {
+          dispatch({
+            type: EReducerActionType.ERROR,
+            payload: error,
+            id,
+          });
+          return;
+        }
+        dispatch({
+          type: EReducerActionType.PAUSED,
+          id,
+        });
+      }
+    }
   };
 
   return (
@@ -126,7 +164,7 @@ function App() {
             <li key={file.name}>
               {file.name} -- {formatBlobSize(file.size)}
               <button type="button" onClick={() => handleFileUpload(id)}>
-                {status === FileStatus.UPLOAD_NOT_STARTED ? "Start" : "Resume"}
+                {status === FileStatus.NOT_STARTED ? "Start" : "Pause"}
               </button>
               {typeof progress === "number" ? (
                 <>
