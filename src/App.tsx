@@ -31,15 +31,16 @@ type TReducerAction = {
 };
 
 const enum EReducerActionType {
-  ADD_FILES,
+  SET,
   INIT,
   ERROR,
   PAUSED,
+  PROGRESS,
 }
 
 function reducer(state: typeof initialState, action: TReducerAction) {
   switch (action.type) {
-    case EReducerActionType.ADD_FILES:
+    case EReducerActionType.SET:
       const fileList = action.payload as FileList;
       const newState: typeof initialState = {};
       for (let i = 0; i < fileList.length; i++) {
@@ -90,6 +91,16 @@ function reducer(state: typeof initialState, action: TReducerAction) {
         },
       };
     }
+    case EReducerActionType.PROGRESS: {
+      const id = action.id as string;
+      return {
+        ...state,
+        [id]: {
+          ...state[id],
+          progress: action.payload as number,
+        },
+      };
+    }
     default: {
       return state;
     }
@@ -101,7 +112,7 @@ function App() {
 
   const handleFileChange = (ev: ChangeEvent<HTMLInputElement>) => {
     dispatch({
-      type: EReducerActionType.ADD_FILES,
+      type: EReducerActionType.SET,
       payload: ev.target.files,
     });
   };
@@ -115,18 +126,17 @@ function App() {
     });
     for (const chunk of chunks) {
       const headers = new Headers();
+      headers.append("Content-Type", "application/octet-stream");
       headers.append(
         "Content-Range",
         `bytes ${chunk.startIndex}-${chunk.endIndex}/${state[id].file.size}`
       );
-      const body = new FormData();
-      body.append("id", id);
-      body.append("chunk", chunk.blob);
+      headers.append("X-Video-Id", id);
       try {
-        const response = await fetch("/files", {
+        const response = await fetch("/videos", {
           method: "POST",
           headers,
-          body,
+          body: chunk.blob,
           signal: state[id].abortController?.signal,
         });
         if (!response.ok) {
@@ -137,6 +147,11 @@ function App() {
           });
           return;
         }
+        dispatch({
+          type: EReducerActionType.PROGRESS,
+          payload: (chunk.endIndex / state[id].file.size) * 100,
+          id,
+        });
       } catch (err: unknown) {
         const error = err as Error;
         if (error.name !== "AbortError") {
@@ -157,7 +172,13 @@ function App() {
 
   return (
     <>
-      <input type="file" name="files" onChange={handleFileChange} multiple />
+      <input
+        type="file"
+        name="files"
+        onChange={handleFileChange}
+        accept="video/mp4,video/x-m4v,video/*"
+        multiple
+      />
       {Object.keys(state).length ? (
         <ul>
           {Object.entries(state).map(([id, { file, progress, status }]) => (
