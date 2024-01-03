@@ -50,7 +50,7 @@ function reducer(state: typeof initialState, action: TReducerAction) {
           file,
           chunks: [],
           progress: null,
-          abortController: null,
+          abortController: new AbortController(),
           errors: [],
           status: FileStatus.NOT_STARTED,
         };
@@ -66,7 +66,6 @@ function reducer(state: typeof initialState, action: TReducerAction) {
           chunks,
           progress: 0,
           status: FileStatus.STARTED,
-          abortController: new AbortController(),
         },
       };
     }
@@ -124,21 +123,24 @@ function App() {
       payload: chunks,
       id,
     });
-    for (const chunk of chunks) {
+    for await (const chunk of chunks) {
       const headers = new Headers();
-      headers.append("Content-Type", "application/octet-stream");
       headers.append(
         "Content-Range",
         `bytes ${chunk.startIndex}-${chunk.endIndex}/${state[id].file.size}`
       );
-      headers.append("X-Video-Id", id);
       try {
-        const response = await fetch("/videos", {
-          method: "POST",
-          headers,
-          body: chunk.blob,
-          signal: state[id].abortController?.signal,
-        });
+        const response = await fetch(
+          `${import.meta.env["VITE_AUTH-SERVICE_URL"]}:${
+            import.meta.env["VITE_AUTH-SERVICE_PORT"]
+          }/videos`,
+          {
+            method: "POST",
+            headers,
+            body: chunk.blob,
+            signal: state[id].abortController?.signal,
+          }
+        );
         if (!response.ok) {
           dispatch({
             type: EReducerActionType.ERROR,
@@ -172,11 +174,13 @@ function App() {
 
   return (
     <>
+      <label htmlFor="videos">Choose video files:</label>
       <input
         type="file"
-        name="files"
+        id="videos"
+        name="videos"
         onChange={handleFileChange}
-        accept="video/mp4,video/x-m4v,video/*"
+        accept="video/mp4, video/x-m4v, video/*"
         multiple
       />
       {Object.keys(state).length ? (

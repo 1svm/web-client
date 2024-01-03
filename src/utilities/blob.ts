@@ -18,21 +18,21 @@ export type TBlobChunk = {
   blob: Blob;
 };
 
-export function generateBlobChunks(
+export async function* generateBlobChunks(
   blob: Blob,
-  options = { chunkSize: 1 }
-): TBlobChunk[] {
-  const chunkList: TBlobChunk[] = [];
+  options = { startIndex: 0, chunkSize: 1 }
+): AsyncGenerator<TBlobChunk> {
   const chunkSizeInMBs = options.chunkSize * 1024 * 1024;
-  let startIndex = 0;
+  let startIndex = options.startIndex;
   while (startIndex < blob.size) {
-    let endIndex = startIndex + Math.min(chunkSizeInMBs, blob.size);
-    chunkList.push({
+    const endIndex = startIndex + Math.min(chunkSizeInMBs, blob.size);
+    const chunkBlob = blob.slice(startIndex, endIndex, blob.type);
+    yield {
       startIndex,
       endIndex,
-      blob: blob.slice(startIndex, endIndex, blob.type),
-    });
+      blob: chunkBlob,
+    };
     startIndex = endIndex;
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  return chunkList;
 }
