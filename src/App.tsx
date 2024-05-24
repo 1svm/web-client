@@ -1,9 +1,5 @@
 import { useReducer, ChangeEvent } from "react";
-import {
-  formatBlobSize,
-  generateBlobChunks,
-  type TBlobChunk,
-} from "./utilities";
+import { formatBlobSize, generateBlobIterator } from "./utilities";
 
 const enum FileStatus {
   NOT_STARTED,
@@ -15,10 +11,9 @@ const enum FileStatus {
 
 type TFile = {
   file: File;
-  status: FileStatus;
-  chunks: TBlobChunk[];
   progress: number | null;
-  abortController: AbortController | null;
+  status: FileStatus;
+  abortController: AbortController;
   errors: Error[];
 };
 
@@ -46,24 +41,22 @@ function reducer(state: typeof initialState, action: TReducerAction) {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList.item(i);
         if (!file) continue;
-        newState[`${file.name}:${file.size}`] = {
+        const id = `${file.size}:${file.name}`;
+        newState[id] = {
           file,
-          chunks: [],
           progress: null,
-          abortController: new AbortController(),
           errors: [],
+          abortController: new AbortController(),
           status: FileStatus.NOT_STARTED,
         };
       }
       return newState;
     case EReducerActionType.INIT: {
       const id = action.id as string;
-      const chunks = action.payload as TBlobChunk[];
       return {
         ...state,
         [id]: {
           ...state[id],
-          chunks,
           progress: 0,
           status: FileStatus.STARTED,
         },
@@ -117,18 +110,21 @@ function App() {
   };
 
   const handleFileUpload = async (id: string) => {
-    const chunks = generateBlobChunks(state[id].file);
     dispatch({
       type: EReducerActionType.INIT,
-      payload: chunks,
       id,
     });
-    for await (const chunk of chunks) {
+    const chunkIterator = generateBlobIterator(state[id].file);
+    for await (const chunk of chunkIterator) {
       const headers = new Headers();
+      headers.append("X-Video-ID", id);
+      headers.append("X-Filename", state[id].file.name);
       headers.append(
         "Content-Range",
         `bytes ${chunk.startIndex}-${chunk.endIndex}/${state[id].file.size}`
       );
+      const body = new FormData();
+      body.append("chunk", chunk.blob);
       try {
         const response = await fetch(
           `${import.meta.env["VITE_AUTH-SERVICE_URL"]}:${
@@ -137,7 +133,7 @@ function App() {
           {
             method: "POST",
             headers,
-            body: chunk.blob,
+            body,
             signal: state[id].abortController?.signal,
           }
         );
@@ -151,7 +147,7 @@ function App() {
         }
         dispatch({
           type: EReducerActionType.PROGRESS,
-          payload: (chunk.endIndex / state[id].file.size) * 100,
+          payload: Math.round((chunk.endIndex / state[id].file.size) * 100),
           id,
         });
       } catch (err: unknown) {

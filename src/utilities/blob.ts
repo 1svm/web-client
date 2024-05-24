@@ -18,14 +18,14 @@ export type TBlobChunk = {
   blob: Blob;
 };
 
-export async function* generateBlobChunks(
+export async function* generateBlobIterator(
   blob: Blob,
   options = { startIndex: 0, chunkSize: 1 }
 ): AsyncGenerator<TBlobChunk> {
   const chunkSizeInMBs = options.chunkSize * 1024 * 1024;
   let startIndex = options.startIndex;
   while (startIndex < blob.size) {
-    const endIndex = startIndex + Math.min(chunkSizeInMBs, blob.size);
+    const endIndex = Math.min(startIndex + chunkSizeInMBs, blob.size);
     const chunkBlob = blob.slice(startIndex, endIndex, blob.type);
     yield {
       startIndex,
